@@ -3,7 +3,8 @@
 //
 
 #include <stdint.h>
-#include "malloc.c.h"
+#include <windows.h>
+//#include "malloc.c.h"
 
 #define thread_local(type) __declspec(thread) static type
 
@@ -20,7 +21,7 @@ public:
 
 	static void m_free(void* p)
 	{
-
+		m_thread_local_free(m_pool, p);			
 	}
 
 private:
@@ -30,19 +31,19 @@ private:
 private:
 
 	/////////////////////////////////////////////////////////////////////////////////
-	struct m_head_block;
-	using  p_head_block = m_head_block*;
+	struct m_ctrl_block;
+	using  p_ctrl_block = m_ctrl_block*;
 
-	struct m_head_block
+	struct m_ctrl_block
 	{
 		size_t reserved;
 	};
 	
 	/////////////////////////////////////////////////////////////////////////////////
 	struct m_list_block;
-	using p_list_block = m_list_block*;
+	using  p_list_block = m_list_block*;
 
-	struct m_list_block : public m_head_block
+	struct m_list_block : public m_ctrl_block
 	{
 		p_list_block next;
 		p_list_block prev;
@@ -52,7 +53,7 @@ private:
 	struct m_tree_block;
 	using  p_tree_block = m_tree_block*;
 
-	struct m_tree_block : public m_head_block
+	struct m_tree_block : public m_ctrl_block
 	{
 		p_tree_block left;
 		p_tree_block right;
@@ -66,14 +67,14 @@ private:
 
 	struct m_thread_local_pool
 	{
-		p_head_block head;
+		p_ctrl_block head;
 
 		uint32_t     listmaps;
 		m_list_block listbins[ListBinCount];
 	};
 	
 private:
-	static const size_t OneChunkSize = sizeof(m_head_block);
+	static const size_t OneChunkSize = sizeof(m_ctrl_block);
 	static const size_t MinChunkSize = (OneChunkSize + 0x7) & ~0x7;
 	
 	static const size_t MinRequestSize = MinChunkSize - OneChunkSize;
@@ -103,7 +104,7 @@ private:
 			pool = static_cast<p_thread_local_pool>(memory);
 			pool->listmaps = 0;
 
-			pool->head = reinterpret_cast<p_head_block>(&pool + sizeof(m_thread_local_pool));
+			pool->head = add_blk(pool, sizeof(m_thread_local_pool));
 			pool->head->reserved = size - sizeof(m_thread_local_pool);
 
 			// init list bins
@@ -130,22 +131,79 @@ private:
 			{
 				size_t residual_size = pool->head->reserved - request;
 
-				p_head_block p = pool->head;
+				p_ctrl_block p = pool->head;
 				p->reserved = request | InUseBit;
 
-				pool->head = reinterpret_cast<p_head_block>(reinterpret_cast<char*>(p) + request);
-				pool->head->reserved = residual_size;
+				pool->head = add_blk(p, request);
+				pool->head->reserved = residual_size & ~InUseBit;
 
-				mem = reinterpret_cast<char*>(p) + OneChunkSize;
+				mem = blk_to_mem(p);
 			}
 		}
 
 		return mem;
 	}
 
-	static void m_thread_local_free(p_thread_local_pool pool, void* p)
+	static void m_thread_local_free(p_thread_local_pool pool, void* mem)
 	{
+		p_ctrl_block p = mem_to_blk(mem);
+		size_t size = blk_size(p);
 
+		p_ctrl_block n = add_blk(p, size);
+		if (!get_inuse(n))
+		{
+
+		}
+	}
+
+private:
+	inline static size_t blk_size(p_ctrl_block blk)
+	{
+		return blk->reserved & ~InUseBit;
+	}
+
+	inline static bool get_inuse(p_ctrl_block blk)
+	{
+		return blk->reserved & InUseBit;
+	}
+
+	inline static void set_inuse(p_ctrl_block blk)
+	{
+		return blk->reserved | InUseBit;
+	}
+
+	inline static void* blk_to_mem(p_ctrl_block p)
+	{
+		return reinterpret_cast<char*>(p) + OneChunkSize;
+	}
+
+	inline static p_ctrl_block mem_to_blk(void* mem)
+	{
+		return sub_blk(mem, OneChunkSize);
+	}
+
+	template <typename ret_t, typename mem_t, typename count_t> 
+	inline static ret_t add_mem(mem_t mem, count_t count)
+	{
+		return reinterpret_cast<ret_t>(reinterpret_cast<char*>(mem) + count);
+	}
+
+	template <typename mem_t, typename count_t> 
+	inline static p_ctrl_block add_blk(mem_t mem, count_t count)
+	{
+		return add_mem<p_ctrl_block>(mem, count);
+	}
+
+	template <typename ret_t, typename mem_t, typename count_t>
+	inline static ret_t sub_mem(mem_t mem, count_t count)
+	{
+		return reinterpret_cast<ret_t>(reinterpret_cast<char*>(mem) - count);
+	}
+
+	template <typename mem_t, typename count_t>
+	inline static p_ctrl_block sub_blk(mem_t mem, count_t count)
+	{
+		return sub_mem<p_ctrl_block>(mem, count);
 	}
 
 private:
