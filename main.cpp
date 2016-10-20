@@ -27,7 +27,7 @@ public:
 			pool = m_thread_local_init_pool();
 		}
 
-		return m_thread_local_alloc(m_map.thread_pool[m_map.thread_index], size);
+		return m_thread_local_alloc(pool, size);
 	}
 
 	static void m_free(void* p)
