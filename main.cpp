@@ -48,7 +48,9 @@ public:
 private:
 	using atomic_value = std::atomic < size_t >;
 
-	static const size_t InUseBit       = 0x01;
+	static const size_t CUse_Bit       = 0x01;
+	static const size_t PUse_Bit       = 0x02;
+
 	static const size_t ListBinCount   = 0x20;
 	static const size_t MaxThreadCount = 0x40;
 
@@ -140,6 +142,7 @@ private:
 
 			pool->head = add_blk(pool, sizeof(m_thread_local_pool));
 			set_size(pool->head, size - sizeof(m_thread_local_pool));
+			turn_ubit(pool->head, PUse_Bit);
 
 			// init list bins
 			for (size_t i = 0; i < ListBinCount; i++)
@@ -166,12 +169,16 @@ private:
 				size_t rest = get_size(pool->head) - size;
 
 				p_ctrl_block p = pool->head;
-
 				set_size(p, size);
-				set_inuse(p);
+
+				turn_ubit(p, CUse_Bit);
 
 				pool->head = add_blk(p, size);
-				set_size(pool->head, rest);
+
+				set_size(pool->head, rest);				
+				set_prev(pool->head, size);
+
+				turn_ubit(pool->head, PUse_Bit);
 
 				mem = blk_to_mem(p);
 			}
@@ -182,35 +189,83 @@ private:
 
 	static void m_thread_local_free(p_thread_local_pool pool, void* mem)
 	{
-		p_ctrl_block curr = mem_to_blk(mem);
-		size_t size = get_size(curr);
+		p_ctrl_block curr_b = mem_to_blk(mem);
+		size_t       curr_s = get_size(curr_b);
 
-		p_ctrl_block next = add_blk(curr, size);
-		if (!get_inuse(next))
+		p_ctrl_block next_b = add_blk(curr_b, curr_s);
+		size_t       next_s = get_size(next_b);
+		
+		if (!get_ubit(curr_b, PUse_Bit))
 		{
+			size_t       prev_s = get_prev(curr_b);
+			p_ctrl_block prev_b = sub_blk(curr_b, prev_s);
+			
+			curr_b =  prev_b;
+			curr_s += prev_s;
 
+			//unlink_blk
 		}
+
+		if (!get_ubit(next_b, CUse_Bit))
+		{
+			curr_s += next_s;
+
+			if (next_b == pool->head)
+			{				
+				pool->head = curr_b;
+				curr_b = pool->head;
+
+				turn_ubit(pool->head, PUse_Bit);
+			}
+			else
+			{				
+				//unlink_blk
+			}
+		}
+
+		set_size(curr_b, curr_s);
+		drop_ubit(curr_b, CUse_Bit);
+
+		//link_blk
 	}
 
 private:
+	inline static size_t get_prev(p_ctrl_block blk)
+	{
+		return blk->prev;
+	}
+
+	inline static void set_prev(p_ctrl_block blk, size_t size)
+	{
+		blk->prev = size;
+	}
+
 	inline static size_t get_size(p_ctrl_block blk)
 	{
-		return blk->head & ~InUseBit;
+		return blk->head & (~CUse_Bit) & (~PUse_Bit);
 	}
 
 	inline static void set_size(p_ctrl_block blk, size_t size)
 	{
-		blk->head = size & ~InUseBit;
+		size_t sz = size & (~CUse_Bit) & (~PUse_Bit);
+		size_t hd = blk->head & (CUse_Bit | PUse_Bit);
+
+		blk->head = hd | sz;
 	}
 
-	inline static bool get_inuse(p_ctrl_block blk)
+	inline static size_t get_ubit(p_ctrl_block blk, size_t bit)
 	{
-		return blk->head & InUseBit;
+		return blk->head & bit;
 	}
 
-	inline static bool set_inuse(p_ctrl_block blk)
+	inline static void turn_ubit(p_ctrl_block blk, size_t bit)
 	{
-		return blk->head | InUseBit;
+		blk->head |= bit;
+	}
+
+	inline static void drop_ubit(p_ctrl_block blk, size_t bit)
+	{
+		blk->head &= ~bit;
 	}
 
 	inline static void* blk_to_mem(p_ctrl_block p)
@@ -259,6 +314,7 @@ size_t m_allocator::m_thread_pool_map::thread_index = 0;
 void main()
 {
 	void* p = m_allocator::m_alloc(17);
+	m_allocator::m_free(p);
 
 	//mspace msp = create_mspace(256, 0);
 
