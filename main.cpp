@@ -382,7 +382,7 @@ void main()
 {
 	Allocator allocator;
 
-	void* p0 = allocator.malloc(17);
+	void* p0 = allocator.malloc(170000);
 	void* p1 = allocator.malloc(17);
 
 	allocator.free(p0);

@@ -196,11 +196,13 @@ struct m_pool_local
 	uint32_t     m_bits;
 	m_list_block m_bins[Count];
 
+	p_pool_local m_next;
 	DELETE_CONSTRUCTOR_AND_DESTRUCTOR(m_pool_local);
 
 	INLINE void init(size_t foot_size)
 	{
 		m_bits = 0;
+		m_lock.mutex::mutex();
 
 		m_foot = add_mem<p_ctrl_block>(this, sizeof(m_pool_local));
 		m_foot->size(foot_size - sizeof(m_pool_local));
@@ -215,13 +217,19 @@ struct m_pool_local
 
 	INLINE void fini()
 	{
+		for (size_t i = 0; i < Count; i++)
+		{
+			assert(m_bins[i].m_next == m_bins[i].m_prev);
+			assert(m_bins[i].m_next == bins(i));
+		}
+		assert(m_foot == add_mem<p_ctrl_block>(this, sizeof(m_pool_local)));
 	}
 
 	void* malloc(size_t bytesreq)
 	{
 		if (!m_lock.try_lock())
 		{
-			return reinterpret_cast<void*>(0x00000001);
+			return NULL;
 		}
 
 		void* mem = NULL;
@@ -264,7 +272,7 @@ struct m_pool_local
 		}
 		
 		m_lock.unlock();
-		return mem;
+		return mem != NULL ? mem : reinterpret_cast<void*>(0x00000001);
 	}
 
 	void free(void* p)
@@ -284,7 +292,7 @@ struct m_pool_local
 		p_ctrl_block next_b = curr_b->next_blck();
 		size_t       next_s = next_b->size();
 				
-		if (!curr_b->pbit()) //coalcesce with previous
+		if (!curr_b->pbit()) //coalesce with previous block
 		{
 			size_t       prev_s = curr_b->head();
 			p_ctrl_block prev_b = curr_b->prev_blck();
@@ -295,7 +303,7 @@ struct m_pool_local
 			curr_s += prev_s;			
 		}
 		
-		if (!next_b->cbit()) //coalcesce with forward
+		if (!next_b->cbit()) //coalesce with next block
 		{
 			curr_s += next_s;
 		
@@ -394,9 +402,16 @@ INLINE static ret_t sub_mem(mem_t mem, count_t count)
 
 Allocator::Allocator(size_t thread_local_capacity)
 	: m_ThreadCount(0)
-	, m_ThreadLocalCapacity(thread_local_capacity)
 {
-	::memset(m_ThreadPool, 0, MaxThreadCount*sizeof(p_pool_local));
+	for (size_t i = 0; i < MaxThreadCount; i++)
+	{
+		m_ThreadPool[i] = pool_construct(thread_local_capacity);
+	}
+	for (size_t i = 0; i < MaxThreadCount-1; i++)
+	{
+		m_ThreadPool[i]->m_next = m_ThreadPool[i+1];
+	}
+	m_ThreadPool[MaxThreadCount-1]->m_next = m_ThreadPool[0];
 }
 
 
@@ -404,7 +419,10 @@ Allocator::Allocator(size_t thread_local_capacity)
 
 Allocator::~Allocator()
 {
-
+	for (size_t i = 0; i < MaxThreadCount; i++)
+	{
+		pool_destruct(m_ThreadPool[i]);
+	}
 }
 
 
@@ -412,27 +430,48 @@ Allocator::~Allocator()
 
 void* Allocator::malloc(size_t size)
 {
+	void*  umem = NULL;
+
 	if (m_ThreadIndex == (uint16_t)(-1))
 		m_ThreadIndex = m_ThreadCount++;
 
 	assert(m_ThreadIndex < MaxThreadCount);
-	p_pool_local pool = m_ThreadPool[m_ThreadIndex];
+	p_pool_local pool = m_ThreadPool[m_ThreadIndex];	
 
-	return pool->malloc(size);
+	size_t indx = 0;
+	size_t bits = 0;
+	size_t flag = 0;
+	size_t mask = ((size_t)1 << MaxThreadCount) - 1;
+
+	do 
+	{
+		umem = pool->malloc(size);
+		pool = pool->m_next;
+
+		flag = reinterpret_cast<size_t>(umem);
+		bits |= (flag << indx);
+
+		flag &= ~0x1;
+		indx += 1;
+	} 
+	while ( (bits ^ mask) && !flag);
+
+	return reinterpret_cast<void*>(flag);
 }
 
 
 /////////////////////////////////////////////////////////////////////////////////////
 
-void Allocator::free(void* p)
+void Allocator::free(void* umem)
 {
-	p_ctrl_block blck = mem_to_blk(p);
+	if (!umem)
+		return;
+
+	p_ctrl_block blck = mem_to_blk(umem);
 	p_pool_local pool = blck->pool();
 
 	if (pool)
-	{
-		pool->free(p);
-	}
+		pool->free(umem);
 }
 
 /////////////////////////////////////////////////////////////////////////////////////
@@ -449,9 +488,7 @@ p_pool_local Allocator::pool_construct(size_t capacity)
 
 	void* memory = ::VirtualAlloc(0, size, MEM_RESERVE | MEM_COMMIT, PAGE_READWRITE);
 	if (!memory)
-	{
 		return NULL;
-	}
 
 	::ZeroMemory(memory, size);
 
@@ -465,7 +502,11 @@ p_pool_local Allocator::pool_construct(size_t capacity)
 
 void Allocator::pool_destruct(p_pool_local pool)
 {
-	pool->fini();
+	if (pool)
+	{
+		pool->fini();
+		::VirtualFree(pool, 0, MEM_RELEASE);
+	}
 }
 
 
