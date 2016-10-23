@@ -1,3 +1,4 @@
+#pragma once
 //===================================================================================
 //
 // externals:
@@ -11,6 +12,8 @@
 namespace Small
 {
 
+// SmallBlockAllocator can manage memory pools 
+// of small blocks and large blocks
 class BlockAllocator
 {
 public:
@@ -27,7 +30,7 @@ private:
 	};
 
 	using p_pool_local = struct m_pool_local*;
-	p_pool_local m_ThreadPool[MaxThreadCount];
+	p_pool_local m_ThreadPool[MaxThreadCount]; //array of internal thread local memory pools
 
 private:
 	p_pool_local pool_construct(size_t capacity);

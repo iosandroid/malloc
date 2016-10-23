@@ -24,15 +24,19 @@ namespace Small
 
 namespace Small
 {
+	// This is a data structure which is used as a "service" header for user memory
+	// block. 
 	struct m_ctrl_block
 	{
-		size_t       m_head; //
-		size_t       m_data; //
+		size_t       m_head; // stores the size of the previos memory block
+		size_t       m_data; // stores the size of the current memory block + 
+							 // 2 less significant bits used as flags: whether
+							 // the current block and the previous block are in use
 
 		p_pool_local m_pool; // parent memory pool
 
-		p_ctrl_block m_next;
-		p_ctrl_block m_prev;
+		p_ctrl_block m_next; // next block in the linked list (if the blocked cached in the bins array)
+		p_ctrl_block m_prev; // previoius block in the linked list (if the blocked cached in the bins array)
 
 		DELETE_CONSTRUCTOR_AND_DESTRUCTOR(m_ctrl_block);
 
@@ -66,12 +70,12 @@ namespace Small
 			m_data = (m_data & (CBit | PBit)) | (size & (~CBit) & (~PBit));
 		}
 
-		INLINE size_t pbit()
+		INLINE size_t pbit() // flag, whether the previous control memory block is in use
 		{
 			return m_data & PBit;
 		}
 
-		INLINE size_t cbit()
+		INLINE size_t cbit() // flag, whether the current control memory block is in use
 		{
 			return m_data & CBit;
 		}
@@ -109,6 +113,8 @@ namespace Small
 
 namespace Small
 {
+	// this routine is used to convert user memory to allocator internal control 
+	// memory block
 	INLINE static p_ctrl_block mem_to_blk(void* mem)
 	{
 		return sub_mem<p_ctrl_block>(mem, sizeof(m_ctrl_block));
@@ -121,6 +127,7 @@ namespace Small
 
 namespace Small
 {
+	// This data structure describes a unique memory pool.
 	struct m_pool_local
 	{
 		enum
@@ -134,13 +141,13 @@ namespace Small
 			MaxBinBlockRequest = MaxBinBlockSize - sizeof(m_ctrl_block) - 0x7
 		};
 
-		LOCK         m_lock;
-		p_ctrl_block m_foot;
+		LOCK         m_lock; // mutex to lock the whole pool
+		p_ctrl_block m_foot; // free control memory block which is used to allocate new memory blocks
 
-		uint32_t     m_bits;
-		m_ctrl_block m_bins[Count];
+		uint32_t     m_bits; // binary map used to indicate what bins are in the use
+		m_ctrl_block m_bins[Count]; // array of linked lists used to cache already freed memory blocks
 
-		p_pool_local m_next;
+		p_pool_local m_next; // link to next memory pool in this allocator
 		DELETE_CONSTRUCTOR_AND_DESTRUCTOR(m_pool_local);
 
 		INLINE void init(size_t foot_size)
@@ -167,6 +174,10 @@ namespace Small
 			assert(m_foot == add_mem<p_ctrl_block>(this, sizeof(m_pool_local)));
 		}
 
+		// this routine tries to allocate memory block; 
+		// first it looks to the binary maps for suitable memory block,
+		// and later if there is enough memory is allocates a new block
+		// from the foots
 		void* malloc(size_t bytesreq)
 		{
 			if (!m_lock.try_lock())
@@ -193,6 +204,9 @@ namespace Small
 			return mem != NULL ? mem : reinterpret_cast<void*>(0x00000001);
 		}
 
+		// this routine releases allocated memory block; it tries to coalesce
+		// it with the previous or the next block, and then caches the result
+		// in the binary map
 		void free(void* p)
 		{
 			SCOPE_LOCK(m_lock);
@@ -251,6 +265,7 @@ namespace Small
 			return &m_bins[indx];
 		}
 
+		// takes the first block in the specified linked list
 		INLINE void* bins_malloc(size_t size)
 		{
 			size_t indx = size >> 3;
@@ -266,6 +281,7 @@ namespace Small
 			return blck->user_blck();
 		}
 
+		// allocates a new memory block on the foot
 		INLINE void* foot_malloc(size_t size)
 		{
 			size_t rest = m_foot->size() - size;
@@ -284,6 +300,7 @@ namespace Small
 			return blck->user_blck();
 		}
 
+		// add memory block to the specified linked list
 		INLINE void push_binblk(p_ctrl_block blck)
 		{
 			size_t size = blck->size();
@@ -302,6 +319,7 @@ namespace Small
 			m_bits |= ((size_t)1 << indx);
 		}
 
+		// remove memory block from the specified linked list
 		INLINE void pull_binblk(p_ctrl_block blck)
 		{
 			p_ctrl_block lblk = static_cast<p_ctrl_block>(blck);
@@ -375,6 +393,9 @@ void* BlockAllocator::malloc(size_t size)
 	size_t flag = 0;
 	size_t mask = ((size_t)1 << MaxThreadCount) - 1;
 
+	// run through the circular list of the pools trying to lock one;
+	// the pool return 1u if it is cannot allocate the block; then try
+	// the next pool until we look over all the pools
 	do
 	{
 		umem = pool->malloc(size);
