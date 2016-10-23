@@ -2,7 +2,7 @@
 //
 // externals:
 
-#include "allocator.hpp"
+#include "allocator1.hpp"
 
 #include <mutex>
 #include <assert.h>
@@ -94,7 +94,10 @@ struct m_ctrl_block
 	p_pool_local m_pool; // parent memory pool
 
 	p_ctrl_block m_next;
-	p_ctrl_block m_prev;	
+	p_ctrl_block m_prev;
+
+	p_ctrl_block m_leaf[2];
+	p_ctrl_block m_parent;
 
 	DELETE_CONSTRUCTOR_AND_DESTRUCTOR(m_ctrl_block);
 
@@ -234,7 +237,7 @@ struct m_pool_local
 				assert((lblk->m_next != lblk) && (lblk->m_prev != lblk));
 		
 				p_ctrl_block blk = lblk->m_next;
-				pull_binblk(blk);
+				trip_binblk(blk);
 				blk->pool(this);
 				blk->turn(CBit);
 				blk->turn(PBit);
@@ -286,7 +289,7 @@ struct m_pool_local
 			size_t       prev_s = curr_b->head();
 			p_ctrl_block prev_b = curr_b->prev_blck();
 					
-			pull_binblk(prev_b);
+			trip_binblk(prev_b);
 		
 			curr_b =  prev_b;
 			curr_s += prev_s;			
@@ -307,7 +310,7 @@ struct m_pool_local
 			}
 			else
 			{				
-				pull_binblk(next_b);
+				trip_binblk(next_b);
 			}
 		}
 		
@@ -315,7 +318,7 @@ struct m_pool_local
 		curr_b->drop(CBit);
 		curr_b->next_blck()->drop(PBit);
 		
-		push_binblk(curr_b);
+		link_binblk(curr_b);
 	}
 
 	INLINE p_ctrl_block bins(size_t indx)
@@ -324,7 +327,7 @@ struct m_pool_local
 		return &m_bins[indx];
 	}
 
-	INLINE void push_binblk(p_ctrl_block blck)
+	INLINE void link_binblk(p_ctrl_block blck)
 	{
 		size_t size = blck->size();
 		size_t indx = size >> 3;
@@ -342,11 +345,9 @@ struct m_pool_local
 		m_bits |= ((size_t)1 << indx);
 	}
 
-	INLINE void pull_binblk(p_ctrl_block blck)
+	INLINE void trip_binblk(p_ctrl_block blck)
 	{
-		p_ctrl_block lblk = static_cast<p_ctrl_block>(blck);
-
-		size_t size = lblk->size();
+		size_t size = blck->size();
 		size_t indx = size >> 3;
 
 		assert(indx < Count);
@@ -360,6 +361,7 @@ struct m_pool_local
 		next->m_prev = prev;
 		prev->m_next = next;
 	}
+
 };
 
 
@@ -386,7 +388,7 @@ INLINE static ret_t sub_mem(mem_t mem, count_t count)
 //
 //
 
-Allocator::Allocator(size_t thread_local_capacity)
+Allocator1::Allocator1(size_t thread_local_capacity)
 	: m_ThreadCount(0)
 {
 	for (size_t i = 0; i < MaxThreadCount; i++)
@@ -403,7 +405,7 @@ Allocator::Allocator(size_t thread_local_capacity)
 
 /////////////////////////////////////////////////////////////////////////////////////
 
-Allocator::~Allocator()
+Allocator1::~Allocator1()
 {
 	for (size_t i = 0; i < MaxThreadCount; i++)
 	{
@@ -414,7 +416,7 @@ Allocator::~Allocator()
 
 /////////////////////////////////////////////////////////////////////////////////////
 
-void* Allocator::malloc(size_t size)
+void* Allocator1::malloc(size_t size)
 {
 	void*  umem = NULL;
 
@@ -448,7 +450,7 @@ void* Allocator::malloc(size_t size)
 
 /////////////////////////////////////////////////////////////////////////////////////
 
-void Allocator::free(void* umem)
+void Allocator1::free(void* umem)
 {
 	if (!umem)
 		return;
@@ -462,7 +464,7 @@ void Allocator::free(void* umem)
 
 /////////////////////////////////////////////////////////////////////////////////////
 
-p_pool_local Allocator::pool_construct(size_t capacity)
+p_pool_local Allocator1::pool_construct(size_t capacity)
 {
 	p_pool_local pool = NULL;
 
@@ -486,7 +488,7 @@ p_pool_local Allocator::pool_construct(size_t capacity)
 
 ////////////////////////////////////////////////////////////////////////////////
 
-void Allocator::pool_destruct(p_pool_local pool)
+void Allocator1::pool_destruct(p_pool_local pool)
 {
 	if (pool)
 	{
@@ -498,7 +500,7 @@ void Allocator::pool_destruct(p_pool_local pool)
 
 ////////////////////////////////////////////////////////////////////////////////
 
-uint16_t Allocator::m_ThreadIndex = (uint16_t)-1;
+uint16_t Allocator1::m_ThreadIndex = (uint16_t)-1;
 
 
 
