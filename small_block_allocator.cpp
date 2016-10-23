@@ -2,7 +2,7 @@
 //
 // externals:
 
-#include "allocator1.hpp"
+#include "small_block_allocator.hpp"
 
 #include <mutex>
 #include <assert.h>
@@ -94,10 +94,7 @@ struct m_ctrl_block
 	p_pool_local m_pool; // parent memory pool
 
 	p_ctrl_block m_next;
-	p_ctrl_block m_prev;
-
-	p_ctrl_block m_leaf[2];
-	p_ctrl_block m_parent;
+	p_ctrl_block m_prev;	
 
 	DELETE_CONSTRUCTOR_AND_DESTRUCTOR(m_ctrl_block);
 
@@ -202,9 +199,7 @@ struct m_pool_local
 
 		// init list bins
 		for (size_t i = 0; i < Count; i++)
-		{
-			m_bins[i].m_next = m_bins[i].m_prev = bins(i);
-		}
+			m_bins[i].m_next = m_bins[i].m_prev = bins_blck(i);
 	}
 
 	INLINE void fini()
@@ -212,17 +207,15 @@ struct m_pool_local
 		for (size_t i = 0; i < Count; i++)
 		{
 			assert(m_bins[i].m_next == m_bins[i].m_prev);
-			assert(m_bins[i].m_next == bins(i));
+			assert(m_bins[i].m_next == bins_blck(i));
 		}
 		assert(m_foot == add_mem<p_ctrl_block>(this, sizeof(m_pool_local)));
 	}
 
 	void* malloc(size_t bytesreq)
 	{
-		if (!m_lock.try_lock())
-		{
-			return NULL;
-		}
+		if (!m_lock.try_lock())		
+			return NULL;		
 
 		void* mem = NULL;
 		if (bytesreq < MaxBinBlockRequest)
@@ -233,33 +226,11 @@ struct m_pool_local
 			size_t bit = m_bits >> indx;
 			if (bit & 0x0000001)
 			{
-				p_ctrl_block lblk = bins(indx);
-				assert((lblk->m_next != lblk) && (lblk->m_prev != lblk));
-		
-				p_ctrl_block blk = lblk->m_next;
-				trip_binblk(blk);
-				blk->pool(this);
-				blk->turn(CBit);
-				blk->turn(PBit);
-		
-				mem = blk->user_blck();
+				mem = bins_malloc(size);
 			}
 			else if (size < m_foot->size())
 			{
-				size_t rest = m_foot->size() - size;
-		
-				p_ctrl_block blk = m_foot;
-				blk->pool(this);
-				blk->size(size);		
-				blk->turn(CBit);
-		
-				m_foot = blk->next_blck();
-				m_foot->size(rest);
-				m_foot->head(size);
-				m_foot->turn(PBit);
-				m_foot->drop(CBit);
-		
-				mem = blk->user_blck();
+				mem = foot_malloc(size);
 			}
 		}
 		
@@ -277,9 +248,7 @@ struct m_pool_local
 		assert(curr_b->pool() == this);
 
 		if (!curr_b->cbit())
-		{
 			return;
-		}
 		
 		p_ctrl_block next_b = curr_b->next_blck();
 		size_t       next_s = next_b->size();
@@ -289,7 +258,7 @@ struct m_pool_local
 			size_t       prev_s = curr_b->head();
 			p_ctrl_block prev_b = curr_b->prev_blck();
 					
-			trip_binblk(prev_b);
+			pull_binblk(prev_b);
 		
 			curr_b =  prev_b;
 			curr_s += prev_s;			
@@ -310,7 +279,7 @@ struct m_pool_local
 			}
 			else
 			{				
-				trip_binblk(next_b);
+				pull_binblk(next_b);
 			}
 		}
 		
@@ -318,23 +287,56 @@ struct m_pool_local
 		curr_b->drop(CBit);
 		curr_b->next_blck()->drop(PBit);
 		
-		link_binblk(curr_b);
+		push_binblk(curr_b);
 	}
 
-	INLINE p_ctrl_block bins(size_t indx)
+	INLINE p_ctrl_block bins_blck(size_t indx)
 	{
 		assert(indx < Count);
 		return &m_bins[indx];
 	}
 
-	INLINE void link_binblk(p_ctrl_block blck)
+	INLINE void* bins_malloc(size_t size)
+	{
+		size_t indx = size >> 3;		
+		assert((bins_blck(indx)->m_next != bins_blck(indx)) && (bins_blck(indx)->m_prev != bins_blck(indx)));
+
+		p_ctrl_block blck = bins_blck(indx)->m_next;
+
+		blck->pool(this);
+		blck->turn(CBit);
+		blck->turn(PBit);
+
+		pull_binblk(blck);
+		return blck->user_blck();
+	}
+
+	INLINE void* foot_malloc(size_t size)
+	{
+		size_t rest = m_foot->size() - size;
+
+		p_ctrl_block blck = m_foot;
+		blck->pool(this);
+		blck->size(size);
+		blck->turn(CBit);
+
+		m_foot = blck->next_blck();
+		m_foot->size(rest);
+		m_foot->head(size);
+		m_foot->turn(PBit);
+		m_foot->drop(CBit);
+
+		return blck->user_blck();
+	}
+
+	INLINE void push_binblk(p_ctrl_block blck)
 	{
 		size_t size = blck->size();
 		size_t indx = size >> 3;
 
 		assert(indx < Count);
 
-		p_ctrl_block prev = bins(indx);
+		p_ctrl_block prev = bins_blck(indx);
 		p_ctrl_block next = prev;
 
 		prev->m_next = blck;
@@ -345,9 +347,11 @@ struct m_pool_local
 		m_bits |= ((size_t)1 << indx);
 	}
 
-	INLINE void trip_binblk(p_ctrl_block blck)
+	INLINE void pull_binblk(p_ctrl_block blck)
 	{
-		size_t size = blck->size();
+		p_ctrl_block lblk = static_cast<p_ctrl_block>(blck);
+
+		size_t size = lblk->size();
 		size_t indx = size >> 3;
 
 		assert(indx < Count);
@@ -361,7 +365,6 @@ struct m_pool_local
 		next->m_prev = prev;
 		prev->m_next = next;
 	}
-
 };
 
 
@@ -388,7 +391,7 @@ INLINE static ret_t sub_mem(mem_t mem, count_t count)
 //
 //
 
-Allocator1::Allocator1(size_t thread_local_capacity)
+SmallBlockAllocator::SmallBlockAllocator(size_t thread_local_capacity)
 	: m_ThreadCount(0)
 {
 	for (size_t i = 0; i < MaxThreadCount; i++)
@@ -405,7 +408,7 @@ Allocator1::Allocator1(size_t thread_local_capacity)
 
 /////////////////////////////////////////////////////////////////////////////////////
 
-Allocator1::~Allocator1()
+SmallBlockAllocator::~SmallBlockAllocator()
 {
 	for (size_t i = 0; i < MaxThreadCount; i++)
 	{
@@ -416,7 +419,7 @@ Allocator1::~Allocator1()
 
 /////////////////////////////////////////////////////////////////////////////////////
 
-void* Allocator1::malloc(size_t size)
+void* SmallBlockAllocator::malloc(size_t size)
 {
 	void*  umem = NULL;
 
@@ -450,7 +453,7 @@ void* Allocator1::malloc(size_t size)
 
 /////////////////////////////////////////////////////////////////////////////////////
 
-void Allocator1::free(void* umem)
+void SmallBlockAllocator::free(void* umem)
 {
 	if (!umem)
 		return;
@@ -464,7 +467,7 @@ void Allocator1::free(void* umem)
 
 /////////////////////////////////////////////////////////////////////////////////////
 
-p_pool_local Allocator1::pool_construct(size_t capacity)
+p_pool_local SmallBlockAllocator::pool_construct(size_t capacity)
 {
 	p_pool_local pool = NULL;
 
@@ -488,7 +491,7 @@ p_pool_local Allocator1::pool_construct(size_t capacity)
 
 ////////////////////////////////////////////////////////////////////////////////
 
-void Allocator1::pool_destruct(p_pool_local pool)
+void SmallBlockAllocator::pool_destruct(p_pool_local pool)
 {
 	if (pool)
 	{
@@ -500,7 +503,7 @@ void Allocator1::pool_destruct(p_pool_local pool)
 
 ////////////////////////////////////////////////////////////////////////////////
 
-uint16_t Allocator1::m_ThreadIndex = (uint16_t)-1;
+uint16_t SmallBlockAllocator::m_ThreadIndex = (uint16_t)-1;
 
 
 

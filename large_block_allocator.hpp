@@ -14,11 +14,11 @@
 
 /////////////////////////////////////////////////////////////////////////////////////
 
-class Allocator
+class LargeBlockAllocator
 {
 public:
-	Allocator(size_t thread_local_capacity = 0);
-	virtual ~Allocator();
+	LargeBlockAllocator(size_t thread_local_capacity = 0);
+	virtual ~LargeBlockAllocator();
 
 	void* malloc(size_t size);
 	void  free(void* umem);
