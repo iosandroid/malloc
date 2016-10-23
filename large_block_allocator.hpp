@@ -2,29 +2,27 @@
 //
 // externals:
 
-#include <atomic>
-#include <stdint.h>
+#include "common.hpp"
+
 
 //===================================================================================
 //
 // public:
 
-#define ATOMIC_VALUE(type) std::atomic<type>
-#define THREAD_LOCAL(type) __declspec(thread) static type
+namespace Large
+{
 
-/////////////////////////////////////////////////////////////////////////////////////
-
-class LargeBlockAllocator
+class BlockAllocator
 {
 public:
-	LargeBlockAllocator(size_t thread_local_capacity = 0);
-	virtual ~LargeBlockAllocator();
+	BlockAllocator(size_t thread_local_capacity = 0);
+	virtual ~BlockAllocator();
 
 	void* malloc(size_t size);
 	void  free(void* umem);
 
 private:
-	enum 
+	enum
 	{
 		MaxThreadCount = 0x10
 	};
@@ -40,3 +38,7 @@ private:
 	ATOMIC_VALUE(uint16_t) m_ThreadCount;
 	THREAD_LOCAL(uint16_t) m_ThreadIndex;
 };
+
+}; //namespace Large
+
+using LargeBlockAllocator = Large::BlockAllocator;

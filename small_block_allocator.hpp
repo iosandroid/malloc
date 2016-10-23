@@ -2,23 +2,20 @@
 //
 // externals:
 
-#include <atomic>
-#include <stdint.h>
+#include "common.hpp"
 
 //===================================================================================
 //
 // public:
 
-#define ATOMIC_VALUE(type) std::atomic<type>
-#define THREAD_LOCAL(type) __declspec(thread) static type
+namespace Small
+{
 
-/////////////////////////////////////////////////////////////////////////////////////
-
-class SmallBlockAllocator
+class BlockAllocator
 {
 public:
-	SmallBlockAllocator(size_t thread_local_capacity = 0);
-	virtual ~SmallBlockAllocator();
+	BlockAllocator(size_t thread_local_capacity = 0);
+	virtual ~BlockAllocator();
 
 	void* malloc(size_t size);
 	void  free(void* umem);
@@ -40,3 +37,7 @@ private:
 	ATOMIC_VALUE(uint16_t) m_ThreadCount;
 	THREAD_LOCAL(uint16_t) m_ThreadIndex;
 };
+
+}; //namespace Small
+
+using SmallBlockAllocator = Small::BlockAllocator;
