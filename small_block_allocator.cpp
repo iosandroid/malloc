@@ -181,27 +181,28 @@ namespace Small
 		void* malloc(size_t bytesreq)
 		{
 			if (!m_lock.try_lock())
-				return NULL;
+				return VOID_0;
+			
+			if (bytesreq >= MaxBinBlockRequest)
+				return VOID_1;
 
 			void* mem = NULL;
-			if (bytesreq < MaxBinBlockRequest)
-			{
-				size_t size = (bytesreq + sizeof(m_ctrl_block) + 0x7) & ~0x7;
-				size_t indx = size >> 3;
 
-				size_t bit = m_bits >> indx;
-				if (bit & 0x0000001)
-				{
-					mem = bins_malloc(size);
-				}
-				else if (size < m_foot->size())
-				{
-					mem = foot_malloc(size);
-				}
+			size_t size = (bytesreq + sizeof(m_ctrl_block) + 0x7) & ~0x7; //adjusting the size to double word boundary
+			size_t indx = size >> 3;
+
+			size_t bit = m_bits >> indx;
+			if (bit & 0x0000001)
+			{
+				mem = bins_malloc(size);
 			}
+			else if (size < m_foot->size())
+			{
+				mem = foot_malloc(size);
+			}			
 
 			m_lock.unlock();
-			return mem != NULL ? mem : reinterpret_cast<void*>(0x00000001);
+			return mem != NULL ? mem : VOID_1;
 		}
 
 		// this routine releases allocated memory block; it tries to coalesce
@@ -252,9 +253,10 @@ namespace Small
 				}
 			}
 
-			curr_b->size(curr_s);
 			curr_b->drop(CBit);
+			curr_b->size(curr_s);
 			curr_b->next_blck()->drop(PBit);
+			curr_b->next_blck()->head(curr_s);
 
 			push_binblk(curr_b);
 		}
@@ -265,10 +267,16 @@ namespace Small
 			return &m_bins[indx];
 		}
 
+		// the index in the array of trees is the most significant bit of the size
+		INLINE size_t bins_indx(size_t size)
+		{
+			return size >> 3;
+		}
+
 		// takes the first block in the specified linked list
 		INLINE void* bins_malloc(size_t size)
 		{
-			size_t indx = size >> 3;
+			size_t indx = bins_indx(size);
 			assert((bins_blck(indx)->m_next != bins_blck(indx)) && (bins_blck(indx)->m_prev != bins_blck(indx)));
 
 			p_ctrl_block blck = bins_blck(indx)->m_next;
@@ -304,7 +312,7 @@ namespace Small
 		INLINE void push_binblk(p_ctrl_block blck)
 		{
 			size_t size = blck->size();
-			size_t indx = size >> 3;
+			size_t indx = bins_indx(size);
 
 			assert(indx < Count);
 
@@ -325,7 +333,7 @@ namespace Small
 			p_ctrl_block lblk = static_cast<p_ctrl_block>(blck);
 
 			size_t size = lblk->size();
-			size_t indx = size >> 3;
+			size_t indx = bins_indx(size);
 
 			assert(indx < Count);
 
@@ -406,9 +414,10 @@ void* BlockAllocator::malloc(size_t size)
 
 		flag &= ~0x1;
 		indx += 1;
-	} while ((bits ^ mask) && !flag);
+	} 
+	while ((bits ^ mask) && !flag);
 
-	return reinterpret_cast<void*>(flag);
+	return CAST(flag);
 }
 
 

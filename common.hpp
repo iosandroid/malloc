@@ -56,6 +56,11 @@
 #define ATOMIC_VALUE(type) std::atomic<type>
 #define THREAD_LOCAL(type) __declspec(thread) static type
 
+#define VOID_0 reinterpret_cast<void*>(0u)
+#define VOID_1 reinterpret_cast<void*>(1u)
+
+#define CAST(value) reinterpret_cast<void*>(value)
+
 
 static const size_t CBit = (size_t)1 << 0;
 static const size_t PBit = (size_t)1 << 1;
@@ -81,7 +86,8 @@ INLINE ret_t sub_mem(mem_t mem, count_t count)
 
 struct ScopedLock
 {
-	INLINE ScopedLock(const LOCK* lock)
+	INLINE ScopedLock(LOCK* lock)
+		: m_lock(lock)
 	{
 		if (m_lock)
 			m_lock->lock();

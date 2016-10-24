@@ -194,11 +194,11 @@ namespace Large
 		void* malloc(size_t bytesreq)
 		{
 			if (!m_lock.try_lock())
-				return NULL;
+				return VOID_0;
 
 			void* mem = NULL;
 
-			size_t size = (bytesreq + sizeof(m_ctrl_block) + 0x7) & ~0x7;
+			size_t size = (bytesreq + sizeof(m_ctrl_block) + 0x7) & ~0x7; //adjusting the size to double word boundary
 			size_t indx = bins_indx(size);
 
 			if ((m_bits >> indx) & 1u)
@@ -211,7 +211,7 @@ namespace Large
 			}
 
 			m_lock.unlock();
-			return (mem != NULL) ? mem : reinterpret_cast<void*>(1u);
+			return (mem != NULL) ? mem : VOID_1;
 		}
 
 		// this routine releases allocated memory block; it tries to coalesce
@@ -219,7 +219,7 @@ namespace Large
 		// in the binary map
 		void free(void* p)
 		{
-			SCOPE_LOCK(m_lock);
+			SCOPE_LOCK(m_lock);		
 
 			p_ctrl_block curr_b = mem_to_blk(p);
 			size_t       curr_s = curr_b->size();
@@ -261,10 +261,11 @@ namespace Large
 					pull_binblk(next_b);
 				}
 			}
-
-			curr_b->size(curr_s);
+						
 			curr_b->drop(CBit);
+			curr_b->size(curr_s);
 			curr_b->next_blck()->drop(PBit);
+			curr_b->next_blck()->head(curr_s);
 
 			push_binblk(curr_b);
 		}
@@ -437,7 +438,7 @@ namespace Large
 
 				if (blck == *h)
 				{
-					if ((*h == r) == 0)
+					if ((*h = r) == 0)
 					{
 						m_bits &= ~((size_t)1u << indx);
 					}
@@ -543,7 +544,7 @@ void* BlockAllocator::malloc(size_t size)
 		indx += 1;
 	} while ((bits ^ mask) && !flag);
 
-	return reinterpret_cast<void*>(flag);
+	return CAST(flag);
 }
 
 

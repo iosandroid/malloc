@@ -8,9 +8,6 @@
     <Filter Include="ned">
       <UniqueIdentifier>{1d86e783-2348-4c4e-a2c3-f3d527219453}</UniqueIdentifier>
     </Filter>
-    <Filter Include="allocator">
-      <UniqueIdentifier>{7577fc36-8fdc-488b-b219-fc04e987b671}</UniqueIdentifier>
-    </Filter>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="main.cpp">
@@ -19,12 +16,6 @@
     <ClCompile Include="nedmalloc.c">
       <Filter>ned</Filter>
     </ClCompile>
-    <ClCompile Include="small_block_allocator.cpp">
-      <Filter>allocator</Filter>
-    </ClCompile>
-    <ClCompile Include="large_block_allocator.cpp">
-      <Filter>allocator</Filter>
-    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="malloc.c.h">
@@ -32,15 +23,6 @@
     </ClInclude>
     <ClInclude Include="nedmalloc.h">
       <Filter>ned</Filter>
-    </ClInclude>
-    <ClInclude Include="small_block_allocator.hpp">
-      <Filter>allocator</Filter>
-    </ClInclude>
-    <ClInclude Include="large_block_allocator.hpp">
-      <Filter>allocator</Filter>
-    </ClInclude>
-    <ClInclude Include="common.hpp">
-      <Filter>src</Filter>
     </ClInclude>
   </ItemGroup>
 </Project>
