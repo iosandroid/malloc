@@ -413,27 +413,27 @@ namespace Large
 			}
 			else
 			{
-				p_ctrl_block* rp;
-				if ((temp = *(rp = &(blck->m_limb[1]))) || (temp = *(rp = &(blck->m_limb[0]))))
+				p_ctrl_block* up;
+				if ((temp = *(up = &(blck->m_limb[1]))) || (temp = *(up = &(blck->m_limb[0]))))
 				{
-					p_ctrl_block* cp;
-					while (*(cp = &(temp->m_limb[1])) || *(cp = &(temp->m_limb[0])))
+					p_ctrl_block* vp;
+					while (*(vp = &(temp->m_limb[1])) || *(vp = &(temp->m_limb[0])))
 					{
-						temp = *(rp = cp);
+						temp = *(up = vp);
 					}
 
-					*rp = 0;
+					*up = 0;
 				}								
 			}
 
 			if (prnt)
 			{
 				size_t indx = blck->indx();
-				p_ctrl_block* h = &m_bins[indx];
+				p_ctrl_block* t = &m_bins[indx];
 
-				if (blck == *h)
+				if (blck == *t)
 				{
-					if ((*h = temp) == 0)
+					if ((*t = temp) == 0)
 					{
 						m_bits &= ~((size_t)1u << indx);
 					}
