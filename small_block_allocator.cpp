@@ -132,13 +132,8 @@ namespace Small
 	{
 		enum
 		{
-			Count = 0x20,
-			PowerOfTwo = 8,
-			MinBlckSize = (sizeof(m_ctrl_block) + 0x7) & ~0x7,
-			MinRequestSize = MinBlckSize - sizeof(m_ctrl_block),
-			MaxRequestSize = (-MinBlckSize) << 2,
-			MaxBinBlockSize = (1 << PowerOfTwo) - 1,
-			MaxBinBlockRequest = MaxBinBlockSize - sizeof(m_ctrl_block) - 0x7
+			Count = 32,			
+			MaxUserReqSize = 256
 		};
 
 		LOCK         m_lock; // mutex to lock the whole pool
@@ -183,7 +178,7 @@ namespace Small
 			if (!m_lock.try_lock())
 				return VOID_0;
 			
-			if (bytesreq >= MaxBinBlockRequest)
+			if (bytesreq >= MaxUserReqSize)
 				return VOID_1;
 
 			void* mem = NULL;
@@ -267,7 +262,8 @@ namespace Small
 			return &m_bins[indx];
 		}
 
-		// the index in the array of trees is the most significant bit of the size
+		// the index in the array of linked lists; 
+		// map size value to the array of 32 bins;
 		INLINE size_t bins_indx(size_t size)
 		{
 			return size >> 3;
@@ -364,6 +360,10 @@ BlockAllocator::BlockAllocator(size_t thread_local_capacity)
 	for (size_t i = 0; i < MaxThreadCount; i++)
 	{
 		m_ThreadPool[i] = pool_construct(thread_local_capacity);
+	}
+	for (size_t i = 0; i < MaxThreadCount; i++)
+	{
+		assert(m_ThreadPool[i]);
 	}
 	for (size_t i = 0; i < MaxThreadCount - 1; i++)
 	{

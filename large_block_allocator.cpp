@@ -154,13 +154,7 @@ namespace Large
 	{
 		enum
 		{
-			Count = 0x20,
-			PowerOfTwo = 8,
-			MinBlckSize = (sizeof(m_ctrl_block) + 0x7) & ~0x7,
-			MinRequestSize = MinBlckSize - sizeof(m_ctrl_block),
-			MaxRequestSize = (-MinBlckSize) << 2,
-			MaxBinBlockSize = (1 << PowerOfTwo) - 1,
-			MaxBinBlockRequest = MaxBinBlockSize - sizeof(m_ctrl_block) - 0x7
+			Count = 32
 		};
 
 		LOCK         m_lock; // mutex to lock the whole pool
@@ -405,8 +399,7 @@ namespace Large
 		INLINE void pull_binblk(p_ctrl_block blck)
 		{
 			p_ctrl_block prnt = blck->m_parent;
-
-			p_ctrl_block r;
+			p_ctrl_block temp = NULL;
 
 			if (blck->m_prev != blck)
 			{
@@ -415,20 +408,22 @@ namespace Large
 
 				next->m_prev = prev;
 				prev->m_next = next;
+
+				temp = prev;
 			}
 			else
 			{
 				p_ctrl_block* rp;
-				if (((r = *(rp = &(blck->m_limb[0]))) != 0) || ((r = *(rp = &(blck->m_limb[1]))) != 0))
+				if ((temp = *(rp = &(blck->m_limb[1]))) || (temp = *(rp = &(blck->m_limb[0]))))
 				{
 					p_ctrl_block* cp;
-					while ((*(cp = &(blck->m_limb[0])) != 0) || (*(cp = &(blck->m_limb[1])) != 0))
+					while (*(cp = &(temp->m_limb[1])) || *(cp = &(temp->m_limb[0])))
 					{
-						r = *(rp = cp);
+						temp = *(rp = cp);
 					}
 
 					*rp = 0;
-				}
+				}								
 			}
 
 			if (prnt)
@@ -438,7 +433,7 @@ namespace Large
 
 				if (blck == *h)
 				{
-					if ((*h = r) == 0)
+					if ((*h = temp) == 0)
 					{
 						m_bits &= ~((size_t)1u << indx);
 					}
@@ -447,28 +442,28 @@ namespace Large
 				{
 					if (prnt->m_limb[0] == blck)
 					{
-						prnt->m_limb[0] = r;
+						prnt->m_limb[0] = temp;
 					}
 					else
 					{
-						prnt->m_limb[1] = r;
+						prnt->m_limb[1] = temp;
 					}
 				}
 
-				if (r)
+				if (temp)
 				{
-					p_ctrl_block c0, c1;
-					r->m_parent = prnt;
+					p_ctrl_block cld0, cld1;
+					temp->m_parent = prnt;
 
-					if ((c0 = blck->m_limb[0]) != 0)
+					if (cld0 = blck->m_limb[0])
 					{
-						r->m_limb[0] = c0;
-						c0->m_parent = r;
+						temp->m_limb[0] = cld0;
+						cld0->m_parent  = temp;
 					}
-					if ((c1 = blck->m_limb[1]) != 0)
+					if (cld1 = blck->m_limb[1])
 					{
-						r->m_limb[1] = c1;
-						c1->m_parent = r;
+						temp->m_limb[1] = cld1;
+						cld1->m_parent  = temp;
 					}
 				}
 			}
@@ -491,7 +486,11 @@ BlockAllocator::BlockAllocator(size_t thread_local_capacity)
 	// construct thread local memory pools
 	for (size_t i = 0; i < MaxThreadCount; i++)
 	{
-		m_ThreadPool[i] = pool_construct(thread_local_capacity);
+		m_ThreadPool[i] = pool_construct(thread_local_capacity);		
+	}
+	for (size_t i = 0; i < MaxThreadCount; i++)
+	{
+		assert(m_ThreadPool[i]);
 	}
 	for (size_t i = 0; i < MaxThreadCount - 1; i++)
 	{
@@ -542,7 +541,8 @@ void* BlockAllocator::malloc(size_t size)
 
 		flag &= ~0x1;
 		indx += 1;
-	} while ((bits ^ mask) && !flag);
+	} 
+	while ((bits ^ mask) && !flag);
 
 	return CAST(flag);
 }
