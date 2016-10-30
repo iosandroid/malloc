@@ -38,72 +38,18 @@
 #include <thread>
 #include <cstdlib>
 
-#include "small_block_allocator.hpp"
-#include "large_block_allocator.hpp"
-
-/////////////////////////////////////////////////////////////////////////////////////
-
-void run_small_dummy_test();
-void run_large_dummy_test();
+#include "block_allocator.hpp"
 
 
 /////////////////////////////////////////////////////////////////////////////////////
 void main()
 {
-	run_small_dummy_test();
-	run_large_dummy_test();
-}
-
-
-/////////////////////////////////////////////////////////////////////////////////////
-
-void run_small_dummy_test()
-{
 	enum
 	{
-		ThreadCount = 16
+		ThreadCount = 1
 	};
 
-	SmallBlockAllocator allocator;
-
-	std::thread thread[ThreadCount];
-	for (size_t i = 0; i < ThreadCount; i++)
-	{
-		thread[i] = std::thread([&]()
-		{
-			std::this_thread::sleep_for(std::chrono::milliseconds(ThreadCount * 10 - i * 10));
-
-			for (size_t i = 0; i < 10000; i++)
-			{
-				void* p0 = allocator.malloc(1 << 3);
-				void* p00 = allocator.malloc(1);
-				void* p1 = allocator.malloc(1 << 4);
-				void* p10 = allocator.malloc(1);				
-
-				allocator.free(p0);
-				allocator.free(p1);
-				allocator.free(p00);
-				allocator.free(p10);				
-			}
-		});
-	}
-	for (size_t i = 0; i < ThreadCount; i++)
-	{
-		thread[i].join();
-	}
-}
-
-
-/////////////////////////////////////////////////////////////////////////////////////
-
-void run_large_dummy_test()
-{
-	enum
-	{
-		ThreadCount = 16
-	};
-
-	LargeBlockAllocator allocator;
+	BlockAllocator allocator;
 
 	std::thread thread[ThreadCount];
 	for (size_t i = 0; i < ThreadCount; i++)
