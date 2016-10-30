@@ -306,7 +306,8 @@ struct m_pool_local
 		return size >> 3;
 	}	
 
-	// the index in the array of trees is the most significant bit of the size
+	// the index in the array of trees is the most 
+	// significant bit of the size
 	INLINE size_t calc_tree_bins_indx(size_t size)
 	{
 		DWORD indx;
@@ -657,12 +658,12 @@ p_pool_local BlockAllocator::pool_construct(size_t capacity)
 	p_pool_local pool = NULL;
 
 	SYSTEM_INFO info;
-	::GetSystemInfo(&info);
+	GetSystemInfo(&info);
 
 	size_t gran = info.dwAllocationGranularity;
 	size_t size = (capacity + (gran << 1) - 1) & ~(gran - 1); // align capacity to granularity size
 
-	void* memory = ::VirtualAlloc(0, size, MEM_RESERVE | MEM_COMMIT, PAGE_READWRITE);
+	void* memory = VirtualAlloc(0, size, MEM_RESERVE | MEM_COMMIT, PAGE_READWRITE);
 	if (!memory)
 		return NULL;
 
@@ -681,7 +682,7 @@ void BlockAllocator::pool_destruct(p_pool_local pool)
 	if (pool)
 	{
 		pool->fini();
-		::VirtualFree(pool, 0, MEM_RELEASE);
+		VirtualFree(pool, 0, MEM_RELEASE);
 	}
 }	
 
